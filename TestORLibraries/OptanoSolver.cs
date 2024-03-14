@@ -5,6 +5,7 @@ using OPTANO.Modeling.Optimization;
 using OPTANO.Modeling.Optimization.Enums;
 using OPTANO.Modeling.Optimization.Operators;
 using OPTANO.Modeling.Optimization.Solver;
+using OPTANO.Modeling.Optimization.Solver.Cplex128;
 using OPTANO.Modeling.Optimization.Solver.Gurobi1100;
 using OPTANO.Modeling.Optimization.Solver.Z3;
 using TestORLibraries.Entity;
@@ -75,7 +76,7 @@ public class OptanoSolver : ISolver
         model.AddObjective(new Objective(objExpr, "minimize",
             ObjectiveSense.Minimize));
         //model.AddObjective(new Objective(objVar, "", ObjectiveSense.Minimize));
-        using (var solver = new GurobiSolver())
+        using (var solver = new CplexSolver())
         {
             var stopwatch = new Stopwatch();
             stopwatch.Start();
