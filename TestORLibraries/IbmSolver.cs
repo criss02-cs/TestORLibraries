@@ -2,166 +2,89 @@
 using ILOG.Concert;
 using TestORLibraries.Entity;
 using System.Diagnostics;
+using static ILOG.CPLEX.Cplex;
 
 namespace TestORLibraries;
 public class IbmSolver : ISolver
 {
-    //    // Crea il modello
-    //    Cplex cplex = new Cplex();
-
-    //    // Definisci i dati del problema
-    //    int numJobs = 3;
-    //    int numMachines = 2;
-    //    int[,] durations = { { 3, 2 }, { 2, 1 }, { 1, 3 } };
-    //    int[,] machines = { { 0, 1 }, { 1, 0 }, { 0, 1 } };
-
-    //    // Crea le variabili
-    //    INumVar[][] startTimes = new INumVar[numJobs][];
-    //        for (int i = 0; i<numJobs; ++i)
-    //        {
-    //            startTimes[i] = new INumVar[numMachines];
-    //            for (int j = 0; j<numMachines; ++j)
-    //            {
-    //                startTimes[i][j] = cplex.NumVar(0, double.MaxValue, NumVarType.Float, $"start_{i}_{j}");
-    //            }
-    //        }
-
-    //        // Aggiungi i vincoli
-    //        for (int i = 0; i < numJobs; ++i)
-    //{
-    //    for (int j = 0; j < numMachines - 1; ++j)
-    //    {
-    //        // Vincolo di precedenza: un task può iniziare solo se il precedente è terminato
-    //        cplex.AddGe(startTimes[i][j + 1], cplex.Sum(startTimes[i][j], durations[i, j]));
-    //    }
-    //}
-
-    //for (int j = 0; j < numMachines; ++j)
-    //{
-    //    for (int i = 0; i < numJobs - 1; ++i)
-    //    {
-    //        for (int k = i + 1; k < numJobs; ++k)
-    //        {
-    //            if (machines[i, j] == machines[k, j])
-    //            {
-    //                // Vincolo di non sovrapposizione: una macchina può eseguire solo un task alla volta
-    //                cplex.AddLe(startTimes[i][j], cplex.Diff(startTimes[k][j], durations[i, j]));
-    //                cplex.AddLe(startTimes[k][j], cplex.Diff(startTimes[i][j], durations[k, j]));
-    //            }
-    //        }
-    //    }
-    //}
-
-    //// Definisci la funzione obiettivo: minimizza il tempo di completamento massimo
-    //INumVar maxCompletionTime = cplex.NumVar(0, double.MaxValue, NumVarType.Float, "maxCompletionTime");
-    //for (int i = 0; i < numJobs; ++i)
-    //{
-    //    for (int j = 0; j < numMachines; ++j)
-    //    {
-    //        // Il tempo di completamento massimo deve essere maggiore o uguale al tempo di completamento di ogni task
-    //        cplex.AddGe(maxCompletionTime, cplex.Sum(startTimes[i][j], durations[i, j]));
-    //    }
-    //}
-    //cplex.AddMinimize(maxCompletionTime);
-
-    //// Risolve il problema
-    //if (cplex.Solve())
-    //{
-    //    System.Console.WriteLine("Solution status = " + cplex.GetStatus());
-    //    System.Console.WriteLine("Solution value  = " + cplex.ObjValue);
-    //    for (int i = 0; i < numJobs; ++i)
-    //    {
-    //        for (int j = 0; j < numMachines; ++j)
-    //        {
-    //            System.Console.WriteLine($"Job {i}, machine {j} starts at {cplex.GetValue(startTimes[i][j])}");
-    //        }
-    //    }
-    //}
-
-    //cplex.End();
     public void Solve(List<List<JobTask>> allJobs, int horizon, int numMachines, int[] allMachines)
     {
-        Cplex cplex = new Cplex();
+        var cplex = new Cplex();
+        var numTasks = allJobs.Max(x => x.Count);
 
-        // Definisci le variabili decisionali
-        INumVar[][][] x = new INumVar[allJobs.Count][][];
-        for (int j = 0; j < allJobs.Count; j++)
+        int[,] durations = new int[allJobs.Count, numTasks];
+        int[,] machines = new int[allJobs.Count, numTasks];
+
+        for (var i = 0; i < allJobs.Count; i++)
         {
-            x[j] = new INumVar[allJobs[j].Count][];
-            for (int i = 0; i < allJobs[j].Count; i++)
+            for (var j = 0; j < allJobs[i].Count; j++)
             {
-                x[j][i] = cplex.BoolVarArray(horizon);
+                durations[i, j] = allJobs[i][j].Duration;
+                machines[i, j] = allJobs[i][j].Machine;
             }
         }
 
-        // Definisci l'obiettivo
-        ILinearNumExpr objective = cplex.LinearNumExpr();
-        for (int j = 0; j < allJobs.Count; j++)
+        var startTimes = new INumVar[allJobs.Count][];
+        for (var i = 0; i < allJobs.Count; i++)
         {
-            for (int i = 0; i < allJobs[j].Count; i++)
+            startTimes[i] = new INumVar[allJobs[i].Count];
+            for (var j = 0; j < allJobs[i].Count; j++)
             {
-                for (int t = 0; t < horizon; t++)
+                startTimes[i][j] = cplex.NumVar(0, int.MaxValue, NumVarType.Int, $"start_{i}_{j}");
+            }
+        }
+
+
+        // vincolo di precedenza
+        for (var i = 0; i < allJobs.Count; i++)
+        {
+            for (var j = 0; j < allJobs[i].Count - 1; j++)
+            {
+                cplex.AddGe(startTimes[i][j + 1], cplex.Sum(startTimes[i][j], durations[i, j]));
+            }
+        }
+
+        // vincolo di non sovrapposizione
+        for (var m = 0; m < numMachines; m++)
+        {
+            var tasksOnMachine = new List<(int i, int j)>();
+            for (var i = 0; i < allJobs.Count; i++)
+            {
+                for (var j = 0; j < allJobs[i].Count; j++)
                 {
-                    objective.AddTerm(t, x[j][i][t]);
-                }
-            }
-        }
-        cplex.AddMinimize(objective);
-
-        // Aggiungi le restrizioni
-        for (int j = 0; j < allJobs.Count; j++)
-        {
-            for (int i = 0; i < allJobs[j].Count; i++)
-            {
-                cplex.AddEq(cplex.Sum(x[j][i]), 1);  // Ogni compito deve essere schedulato una volta
-            }
-        }
-
-        for (int m = 0; m < numMachines; m++)
-        {
-            for (int t = 0; t < horizon; t++)
-            {
-                ILinearNumExpr sum = cplex.LinearNumExpr();
-                for (int j = 0; j < allJobs.Count; j++)
-                {
-                    for (int i = 0; i < allJobs[j].Count; i++)
+                    if (machines[i, j] == m)
                     {
-                        if (allJobs[j][i].Machine == m)
-                        {
-                            for (int d = 0; d < allJobs[j][i].Duration; d++)
-                            {
-                                if (t - d >= 0)
-                                {
-                                    sum.AddTerm(1, x[j][i][t - d]);
-                                }
-                            }
-                        }
+                        tasksOnMachine.Add((i, j));
                     }
                 }
-                cplex.AddLe(sum, 1);  // Non possono essere eseguiti più compiti contemporaneamente su una stessa macchina
             }
-        }
-        for (int j = 0; j < allJobs.Count; j++)
-        {
-            for (int i = 0; i < allJobs[j].Count - 1; i++)  // Per ogni coppia di task consecutivi
+            
+            for (var t1 = 0; t1 < tasksOnMachine.Count; t1++)
             {
-                for (int t = 0; t < horizon; t++)
+                for (var t2 = t1 + 1; t2 < tasksOnMachine.Count; t2++)
                 {
-                    ILinearNumExpr expr = cplex.LinearNumExpr();
-                    for (int d = 0; d < allJobs[j][i].Duration; d++)
-                    {
-                        if (t - d >= 0)
-                        {
-                            expr.AddTerm(1.0, x[j][i][t - d]);
-                        }
-                    }
-                    cplex.AddLe(x[j][i + 1][Math.Min(t + allJobs[j][i].Duration, horizon - 1)], cplex.Diff(1, expr));  // Il task i+1 non può iniziare prima che il task i sia terminato
+                    var (i1, j1) = tasksOnMachine[t1];
+                    var (i2, j2) = tasksOnMachine[t2];
+                    var prec = cplex.BoolVar($"{i1}-{j1}_precedes_{i2}{j2}");
+                    var s = cplex.Sum(startTimes[i1][j1], cplex.Diff(durations[i1, j1], cplex.Prod(horizon, cplex.Diff(1, prec))));
+                    cplex.AddLe(s, startTimes[i2][j2]);
+                    cplex.AddLe(cplex.Sum(startTimes[i2][j2], cplex.Diff(durations[i2, j2], cplex.Prod(horizon, prec))), startTimes[i1][j1]);
                 }
             }
         }
 
+        // funzione obiettivo
+        INumVar maxCompletionTime = cplex.NumVar(0, int.MaxValue, NumVarType.Int, "maxCompletionTime");
+        for (int i = 0; i < allJobs.Count; i++)
+        {
+            for (int j = 0; j < allJobs[i].Count; j++)
+            {
+                // Il tempo di completamento massimo deve essere maggiore o uguale al tempo di completamento di ogni task
+                cplex.AddGe(maxCompletionTime, cplex.Sum(startTimes[i][j], durations[i, j]));
+            }
+        }
 
-
+        cplex.AddMinimize(maxCompletionTime);
 
         // Risoluzione del problema
         var stopwatch = new Stopwatch();
@@ -184,13 +107,8 @@ public class IbmSolver : ISolver
                     {
                         if (allJobs[j][i].Machine == m)
                         {
-                            for (int t = 0; t < horizon; t++)
-                            {
-                                if (cplex.GetValue(x[j][i][t]) > 0.5)  // Se il compito inizia al tempo t
-                                {
-                                    assignedTasks.Add(new AssignedTask(j, i + 1, t, t + allJobs[j][i].Duration));
-                                }
-                            }
+                            double startTime = cplex.GetValue(startTimes[j][i]);
+                            assignedTasks.Add(new AssignedTask(j, i + 1, (int)startTime, allJobs[j][i].Duration));
                         }
                     }
                 }
@@ -218,6 +136,6 @@ public class IbmSolver : ISolver
         {
             Console.WriteLine("No solution found.");
         }
-        System.Console.WriteLine("####################################");
+        System.Console.WriteLine("################ IBM ####################");
     }
 }

@@ -39,7 +39,10 @@ public class OptanoSolver : ISolver
         var latestEnd = new Variable("LatestEnd", 0, Double.MaxValue, VariableType.Continuous);
         foreach (var machine in allMachines)
         {
-            var tasksOnMachine = allJobs.SelectMany(job => job).Where(task => task.Machine == machine).ToList();
+            var tasksOnMachine = allJobs
+                .SelectMany(job => job)
+                .Where(task => task.Machine == machine)
+                .ToList();
             model.AddConstraint(Expression.Sum(tasksOnMachine.Select(x => overlap[x, machine])) <= 1, $"MaxOneTaskPerMachine_m{machine}");;
             //}
         }

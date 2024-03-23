@@ -76,6 +76,7 @@ internal class GoogleSolver : ISolver
         var status = solver.Solve(model);
         stopwatch.Stop();
         // print elapsed milliseconds
+        System.Console.WriteLine("########### OR-Tools #########################");
         Console.WriteLine($"Elapsed time: {stopwatch.ElapsedMilliseconds} ms");
         Console.WriteLine($"Solve status: {status}");
 
@@ -95,7 +96,7 @@ internal class GoogleSolver : ISolver
                     {
                         assignedJobs.Add(task.Machine, []);
                     }
-                    assignedJobs[task.Machine].Add(new AssignedTask(jobId, taskId, start, task.Duration));
+                    assignedJobs[task.Machine].Add(new AssignedTask(jobId, taskId + 1, start, task.Duration));
                 }
             }
 
@@ -134,5 +135,6 @@ internal class GoogleSolver : ISolver
         Console.WriteLine($"  conflicts: {solver.NumConflicts()}");
         Console.WriteLine($"  branches : {solver.NumBranches()}");
         Console.WriteLine($"  wall time: {solver.WallTime()}s");
+        System.Console.WriteLine("################ OR-Tools ####################");
     }
 }
