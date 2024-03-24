@@ -46,25 +46,17 @@ foreach (var job in allJobs)
     }
 }
 
-var taskIbm = new Task(() =>
-{
-    var optanoSolver = new IbmSolver();
-    optanoSolver.Solve(allJobs, horizon, numMachines, allMachines);
-});
+var ibmSolver = new IbmSolver();
+ibmSolver.Solve(allJobs, horizon, numMachines, allMachines);
 
-var taskOptano = new Task(() =>
-{
-    var optanoSolver = new OptanoSolver();
-    optanoSolver.Solve(allJobs, horizon, numMachines, allMachines);
-});
-var taskGoogle = new Task(() =>
-{
-    var googleSolver = new GoogleSolver();
-    googleSolver.Solve(allJobs, horizon, numMachines, allMachines);
-});
-List<Task> tasks = [taskOptano, taskGoogle, taskIbm];
-tasks.ForEach(x => x.Start());
-await Task.WhenAll(tasks);
+var gurobiSolver = new GurobiSolver();
+gurobiSolver.Solve(allJobs, horizon, numMachines, allMachines);
+
+var optanoSolver = new OptanoSolver();
+optanoSolver.Solve(allJobs, horizon, numMachines, allMachines);
+
+var googleSolver = new GoogleSolver();
+googleSolver.Solve(allJobs, horizon, numMachines, allMachines);
 
 
 

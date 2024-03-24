@@ -27,6 +27,9 @@
     <Reference Include="SonnetWrapper">
       <HintPath>..\..\Sonnet\x64\net6.0\SonnetWrapper.dll</HintPath>
     </Reference>
+    <Reference Include="xprsdn">
+      <HintPath>C:\xpressmp\bin\xprsdn.dll</HintPath>
+    </Reference>
   </ItemGroup>
 
 </Project>

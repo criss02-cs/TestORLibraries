@@ -76,6 +76,7 @@ internal class GoogleSolver : ISolver
         var status = solver.Solve(model);
         stopwatch.Stop();
         // print elapsed milliseconds
+        Console.ForegroundColor = ConsoleColor.Green;
         System.Console.WriteLine("########### OR-Tools #########################");
         Console.WriteLine($"Elapsed time: {stopwatch.ElapsedMilliseconds} ms");
         Console.WriteLine($"Solve status: {status}");

@@ -1,15 +1,17 @@
-﻿using ILOG.CPLEX;
-using ILOG.Concert;
-using TestORLibraries.Entity;
+﻿
+using Gurobi;
+using ILOG.CPLEX;
 using System.Diagnostics;
-using static ILOG.CPLEX.Cplex;
+using TestORLibraries.Entity;
 
 namespace TestORLibraries;
-public class IbmSolver : ISolver
-{
+internal class GurobiSolver : ISolver
+{ 
     public void Solve(List<List<JobTask>> allJobs, int horizon, int numMachines, int[] allMachines)
     {
-        var cplex = new Cplex();
+        var env = new GRBEnv();
+        var model = new GRBModel(env);
+        
         var numTasks = allJobs.Max(x => x.Count);
 
         int[,] durations = new int[allJobs.Count, numTasks];
@@ -24,23 +26,23 @@ public class IbmSolver : ISolver
             }
         }
 
-        var startTimes = new INumVar[allJobs.Count][];
+        var startTimes = new GRBVar[allJobs.Count][];
         for (var i = 0; i < allJobs.Count; i++)
         {
-            startTimes[i] = new INumVar[allJobs[i].Count];
+            startTimes[i] = new GRBVar[allJobs[i].Count];
             for (var j = 0; j < allJobs[i].Count; j++)
             {
-                startTimes[i][j] = cplex.NumVar(0, int.MaxValue, NumVarType.Int, $"start_{i}_{j}");
+                startTimes[i][j] = model.AddVar(0, int.MaxValue, 0, GRB.INTEGER, $"start_{i}_{j}");
             }
         }
-
 
         // vincolo di precedenza
         for (var i = 0; i < allJobs.Count; i++)
         {
             for (var j = 0; j < allJobs[i].Count - 1; j++)
             {
-                cplex.AddGe(startTimes[i][j + 1], cplex.Sum(startTimes[i][j], durations[i, j]));
+                var leftSide = new GRBLinExpr(startTimes[i][j + 1], 1);
+                model.AddConstr(leftSide, GRB.GREATER_EQUAL, startTimes[i][j] + durations[i, j], $"precedence_{i}{j}");
             }
         }
 
@@ -58,44 +60,44 @@ public class IbmSolver : ISolver
                     }
                 }
             }
-            
+
             for (var t1 = 0; t1 < tasksOnMachine.Count; t1++)
             {
                 for (var t2 = t1 + 1; t2 < tasksOnMachine.Count; t2++)
                 {
                     var (i1, j1) = tasksOnMachine[t1];
                     var (i2, j2) = tasksOnMachine[t2];
-                    var prec = cplex.BoolVar($"{i1}-{j1}_precedes_{i2}{j2}");
-                    var s = cplex.Sum(startTimes[i1][j1], cplex.Diff(durations[i1, j1], cplex.Prod(horizon, cplex.Diff(1, prec))));
-                    cplex.AddLe(s, startTimes[i2][j2]);
-                    cplex.AddLe(cplex.Sum(startTimes[i2][j2], cplex.Diff(durations[i2, j2], cplex.Prod(horizon, prec))), startTimes[i1][j1]);
+                    var prec = model.AddVar(0, 1, 0, GRB.BINARY, $"{i1}-{j1}_precedes_{i2}{j2}");
+                    var s = startTimes[i1][j1] + durations[i1, j1] - horizon * (1 - prec);
+                    model.AddConstr(s, GRB.LESS_EQUAL, startTimes[i2][j2], $"non_overlap_{i1}{j1}_{i2}{j2}");
+                    s = startTimes[i2][j2] + durations[i2, j2] - horizon * prec;
+                    model.AddConstr(s, GRB.LESS_EQUAL, startTimes[i1][j1], $"non_overlap_{i2}{j2}_{i1}{j1}");
                 }
             }
         }
 
         // funzione obiettivo
-        INumVar maxCompletionTime = cplex.NumVar(0, int.MaxValue, NumVarType.Int, "maxCompletionTime");
+        var maxCompletionTime = model.AddVar(0, int.MaxValue, 0, GRB.INTEGER, "maxCompletionTime");
         for (int i = 0; i < allJobs.Count; i++)
         {
             for (int j = 0; j < allJobs[i].Count; j++)
             {
                 // Il tempo di completamento massimo deve essere maggiore o uguale al tempo di completamento di ogni task
-                cplex.AddGe(maxCompletionTime, cplex.Sum(startTimes[i][j], durations[i, j]));
+                model.AddConstr(maxCompletionTime, GRB.GREATER_EQUAL, startTimes[i][j] + durations[i, j], $"max_{i}_{j}");
+                //cplex.AddGe(maxCompletionTime, cplex.Sum(startTimes[i][j], durations[i, j]));
             }
         }
 
-        cplex.AddMinimize(maxCompletionTime);
-
-        // Risoluzione del problema
+        model.SetObjective(new GRBLinExpr(maxCompletionTime, 1), GRB.MINIMIZE);
         var stopwatch = new Stopwatch();
         stopwatch.Start();
-        cplex.Solve();
+        model.Optimize();
         stopwatch.Stop();
-        Console.ForegroundColor = ConsoleColor.Blue;
-        System.Console.WriteLine("########### IBM #########################");
+        Console.ForegroundColor = ConsoleColor.Yellow;
+        System.Console.WriteLine("########### GUROBI #########################");
         Console.WriteLine($"Elapsed time: {stopwatch.ElapsedMilliseconds} ms");
-        Console.WriteLine($"Solve status: {cplex.GetStatus()}");
-        if (cplex.GetStatus() == Cplex.Status.Optimal || cplex.GetStatus() == Cplex.Status.Feasible)
+        Console.WriteLine($"Solve status: {model.Status}");
+        if (model.Status == GRB.Status.OPTIMAL)
         {
             var output = "";
             for (int m = 0; m < numMachines; m++)
@@ -108,7 +110,7 @@ public class IbmSolver : ISolver
                     {
                         if (allJobs[j][i].Machine == m)
                         {
-                            double startTime = cplex.GetValue(startTimes[j][i]);
+                            double startTime = model.GetVarByName($"start_{j}_{i}").X;
                             assignedTasks.Add(new AssignedTask(j, i + 1, (int)startTime, allJobs[j][i].Duration));
                         }
                     }
@@ -130,13 +132,13 @@ public class IbmSolver : ISolver
                 output += solLineTasks + "\n";
                 output += solLine + "\n";
             }
-            Console.WriteLine($"Optimal Schedule Length: {cplex.ObjValue}");
+            Console.WriteLine($"Optimal Schedule Length: {model.ObjVal}");
             Console.WriteLine($"\n{output}");
         }
         else
         {
             Console.WriteLine("No solution found.");
         }
-        System.Console.WriteLine("################ IBM ####################");
+        System.Console.WriteLine("################ GUROBI ####################");
     }
 }
